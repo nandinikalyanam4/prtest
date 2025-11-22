@@ -3,6 +3,7 @@ name: PR Agent - Automated Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:  # Allow manual trigger for testing
 
 jobs:
   pr-review:
@@ -35,6 +36,10 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          if [ -z "${{ github.event.pull_request.number }}" ]; then
+            echo "⚠️ Not a pull request event, skipping PR Agent"
+            exit 0
+          fi
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
           echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
