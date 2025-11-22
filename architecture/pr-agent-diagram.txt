@@ -1,0 +1,140 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    PR AGENT - ARCHITECTURE DIAGRAM                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────┐
+│  Developer  │
+│  Creates PR │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          GITHUB REPOSITORY                                   │
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │              GitHub Actions Workflow Trigger                         │   │
+│  │              (on: pull_request)                                       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PR AGENT PIPELINE                                         │
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 1: Checkout Code                                               │   │
+│  │  - Fetch PR branch                                                   │   │
+│  │  - Get PR metadata                                                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                               │
+│                              ▼                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 2: Secret Scanning (Gitleaks + Custom Scanner)                 │   │
+│  │  ✓ AWS Keys                                                          │   │
+│  │  ✓ API Tokens                                                        │   │
+│  │  ✓ Passwords                                                         │   │
+│  │  ✓ Private Keys                                                      │   │
+│  │  ✓ GitHub PATs                                                       │   │
+│  │  → FAIL if secrets detected                                           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                               │
+│                              ▼                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 3: Static Code Analysis                                        │   │
+│  │  ✓ Semgrep (Security patterns)                                       │   │
+│  │  ✓ Linting (Flake8, Pylint)                                         │   │
+│  │  ✓ Debug statements                                                 │   │
+│  │  ✓ TODO/FIXME detection                                             │   │
+│  │  ✓ Commented code blocks                                            │   │
+│  │  → FAIL if critical issues found                                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                               │
+│                              ▼                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 4: Jira Validation                                             │   │
+│  │  ✓ Extract ticket ID from branch/PR title                           │   │
+│  │  ✓ Validate ticket exists (Jira REST API)                          │   │
+│  │  ✓ Check ticket status ("In Progress" or "Ready for Review")        │   │
+│  │  ✓ Verify project key matches                                       │   │
+│  │  → FAIL if ticket invalid or wrong status                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                               │
+│                              ▼                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 5: AI Code Review (PR-Guardian)                                │   │
+│  │  ✓ Fetch PR diff via GitHub API                                     │   │
+│  │  ✓ Send to OpenAI (GPT-4o)                                          │   │
+│  │  ✓ Analyze:                                                          │   │
+│  │    - Security vulnerabilities                                       │   │
+│  │    - Code quality issues                                             │   │
+│  │    - Architecture anti-patterns                                      │   │
+│  │    - Missing tests                                                   │   │
+│  │    - Production readiness                                            │   │
+│  │  → FAIL if HIGH severity issues detected                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                               │
+│                              ▼                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 6: Production Readiness Checks                                 │   │
+│  │  ✓ Debug code removal                                                │   │
+│  │  ✓ Error handling validation                                        │   │
+│  │  ✓ Code quality metrics                                              │   │
+│  │  → FAIL if non-production-ready code found                           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                               │
+│                              ▼                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Step 7: Aggregate Results & Post Comments                           │   │
+│  │  ✓ Generate summary report                                          │   │
+│  │  ✓ Post structured comments on PR                                    │   │
+│  │  ✓ Provide actionable suggestions                                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DECISION POINT                                      │
+│                                                                               │
+│  ┌──────────────────────┐          ┌──────────────────────┐                │
+│  │   ✅ ALL CHECKS PASS  │          │   ❌ ISSUES FOUND    │                │
+│  │                       │          │                       │                │
+│  │  • PR can be merged   │          │  • PR blocked         │                │
+│  │  • Comments posted    │          │  • Comments posted    │                │
+│  │  • Status: Approved   │          │  • Status: Failed    │                │
+│  └──────────────────────┘          └──────────────────────┘                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL INTEGRATIONS                               │
+│                                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │   GitHub     │  │     Jira     │  │    OpenAI    │  │   Gitleaks   │  │
+│  │     API      │  │     REST     │  │     API      │  │   Scanner    │  │
+│  │              │  │     API      │  │              │  │              │  │
+│  │ • Get PR     │  │ • Validate   │  │ • AI Review  │  │ • Secret     │  │
+│  │ • Post       │  │   ticket     │  │ • Analysis   │  │   Detection  │  │
+│  │   comments   │  │ • Check      │  │ • Scoring    │  │ • Pattern    │  │
+│  │ • Set status │  │   status     │  │              │  │   Matching   │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  KEY COMPONENTS:                                                               ║
+║                                                                                ║
+║  • secrets_check.py      - Custom secret scanning with regex patterns       ║
+║  • static_analysis.py    - Code quality and pattern detection                ║
+║  • jira_check.py         - Jira ticket validation                            ║
+║  • ai_review.py          - AI-powered code review using PR-Guardian          ║
+║  • ai_prompt.py          - PR-Guardian prompt template                       ║
+║  • file_scanner.py       - Utility for file pattern scanning                 ║
+║  • github_api.py         - GitHub API wrapper                                ║
+║  • jira_api.py           - Jira API wrapper                                   ║
+║                                                                                ║
+║  FAIL CONDITIONS:                                                               ║
+║  ❌ Secrets detected                                                          ║
+║  ❌ Debug code found                                                           ║
+║  ❌ Jira ticket invalid                                                        ║
+║  ❌ AI flags HIGH severity issues                                              ║
+║  ❌ Static analysis finds critical issues                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+

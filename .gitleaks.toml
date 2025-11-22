@@ -1,0 +1,30 @@
+# Gitleaks configuration for PR Agent
+title = "PR Agent Secret Detection"
+
+[extend]
+# Use default Gitleaks rules
+useDefault = true
+
+[allowlist]
+description = "Allowlist for common false positives"
+paths = [
+    '''\.md$''',
+    '''\.txt$''',
+    '''\.example$''',
+    '''\.sample$''',
+    '''\.template$''',
+    '''\.gitleaks\.toml$''',
+    '''\.gitignore$''',
+    '''\.github/workflows/.*\.yml$''',
+]
+
+# Allowlist specific patterns that are safe
+regexes = [
+    '''example.*key''',
+    '''test.*token''',
+    '''sample.*secret''',
+]
+
+[rules]
+# Custom rules can be added here if needed
+

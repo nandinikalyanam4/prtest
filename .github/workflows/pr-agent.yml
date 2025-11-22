@@ -1,0 +1,215 @@
+name: PR Agent - Automated Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-review:
+    name: PR Agent Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Set environment variables
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          echo "GITHUB_REPOSITORY=${{ github.repository }}" >> $GITHUB_ENV
+      
+      - name: Install Gitleaks
+        run: |
+          wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
+          tar -xzf gitleaks_8.18.0_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+      
+      - name: Secret Scanning (Gitleaks)
+        id: gitleaks
+        run: |
+          echo "🔒 Running Gitleaks secret scanning..."
+          gitleaks detect --source . --verbose --report-format json --report-path gitleaks-report.json --exit-code 0 || true
+          
+          if [ -f gitleaks-report.json ] && [ -s gitleaks-report.json ]; then
+            echo "❌ Secrets detected by Gitleaks"
+            # Post comment on PR
+            python3 -c "
+            import os
+            import json
+            import sys
+            sys.path.insert(0, '.')
+            from scripts.utils.github_api import GitHubAPI
+            
+            try:
+                github_token = os.getenv('GITHUB_TOKEN')
+                github_repo = os.getenv('GITHUB_REPOSITORY')
+                pr_number = int(os.getenv('PR_NUMBER'))
+                
+                with open('gitleaks-report.json', 'r') as f:
+                    data = json.load(f)
+                
+                # Handle different Gitleaks output formats
+                if isinstance(data, list):
+                    report = data
+                elif isinstance(data, dict) and 'findings' in data:
+                    report = data['findings']
+                else:
+                    report = []
+                
+                github_api = GitHubAPI(github_token, github_repo)
+                
+                comment = '❌ **Gitleaks Secret Scanning Failed**\n\n'
+                comment += f'Found {len(report)} potential secrets:\n\n'
+                
+                for finding in report[:10]:
+                    file_path = finding.get('File', finding.get('file', 'unknown'))
+                    line = finding.get('Line', finding.get('line', '?'))
+                    rule = finding.get('RuleID', finding.get('rule', 'unknown'))
+                    comment += f'- **{file_path}:{line}** - {rule}\n'
+                
+                if len(report) > 10:
+                    comment += f'\n... and {len(report) - 10} more findings\n'
+                
+                comment += '\n**Action Required:** Remove all secrets before merging.'
+                
+                github_api.post_comment(pr_number, comment)
+            except Exception as e:
+                print(f'Error posting Gitleaks comment: {e}')
+            "
+            exit 1
+          else
+            echo "✅ No secrets detected by Gitleaks"
+          fi
+        continue-on-error: true
+      
+      - name: Custom Secret Scanning
+        id: secrets_check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "🔒 Running custom secret scanning..."
+          python scripts/secrets_check.py || SECRETS_EXIT_CODE=$?
+          if [ "${SECRETS_EXIT_CODE:-0}" -ne 0 ]; then
+            echo "❌ Custom secret scanning failed"
+            exit 1
+          else
+            echo "✅ Custom secret scanning passed"
+          fi
+        continue-on-error: true
+      
+      - name: Static Code Analysis
+        id: static_analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "📊 Running static code analysis..."
+          python scripts/static_analysis.py || STATIC_EXIT_CODE=$?
+          if [ "${STATIC_EXIT_CODE:-0}" -ne 0 ]; then
+            echo "❌ Static analysis failed"
+            exit 1
+          else
+            echo "✅ Static analysis passed"
+          fi
+        continue-on-error: true
+      
+      - name: Jira Validation
+        id: jira_check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+        run: |
+          echo "🎫 Validating Jira ticket..."
+          python scripts/jira_check.py || JIRA_EXIT_CODE=$?
+          if [ "${JIRA_EXIT_CODE:-0}" -ne 0 ]; then
+            echo "❌ Jira validation failed"
+            exit 1
+          else
+            echo "✅ Jira validation passed"
+          fi
+      
+      - name: AI Code Review
+        id: ai_review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ env.OPENAI_MODEL || 'gpt-4o' }}
+        run: |
+          echo "🤖 Running AI code review..."
+          python scripts/ai_review.py || AI_EXIT_CODE=$?
+          if [ "${AI_EXIT_CODE:-0}" -ne 0 ]; then
+            echo "❌ AI review failed"
+            exit 1
+          else
+            echo "✅ AI review passed"
+          fi
+        continue-on-error: true
+      
+      - name: Post Summary Comment
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "📊 Posting summary comment..."
+          python -c "
+          import os
+          from scripts.utils.github_api import GitHubAPI
+          
+          github_token = os.getenv('GITHUB_TOKEN')
+          github_repo = os.getenv('GITHUB_REPOSITORY')
+          pr_number = int(os.getenv('PR_NUMBER'))
+          
+          github_api = GitHubAPI(github_token, github_repo)
+          
+          # Get step results
+          gitleaks_status = '✅' if '${{ steps.gitleaks.outcome }}' == 'success' else '❌'
+          secrets_status = '✅' if '${{ steps.secrets_check.outcome }}' == 'success' else '❌'
+          static_status = '✅' if '${{ steps.static_analysis.outcome }}' == 'success' else '❌'
+          jira_status = '✅' if '${{ steps.jira_check.outcome }}' == 'success' else '❌'
+          ai_status = '✅' if '${{ steps.ai_review.outcome }}' == 'success' else '❌'
+          
+          summary = f'''## 📊 PR Agent Review Summary
+          
+          {gitleaks_status} **Gitleaks Secret Scanning**: ${{'PASS' if '${{ steps.gitleaks.outcome }}' == 'success' else 'FAIL'}}
+          {secrets_status} **Custom Secret Scanning**: ${{'PASS' if '${{ steps.secrets_check.outcome }}' == 'success' else 'FAIL'}}
+          {static_status} **Static Code Analysis**: ${{'PASS' if '${{ steps.static_analysis.outcome }}' == 'success' else 'FAIL'}}
+          {jira_status} **Jira Validation**: ${{'PASS' if '${{ steps.jira_check.outcome }}' == 'success' else 'FAIL'}}
+          {ai_status} **AI Code Review**: ${{'PASS' if '${{ steps.ai_review.outcome }}' == 'success' else 'FAIL'}}
+          
+          ---
+          *This review was automatically generated by PR Agent*
+          '''
+          
+          github_api.post_comment(pr_number, summary)
+          "
