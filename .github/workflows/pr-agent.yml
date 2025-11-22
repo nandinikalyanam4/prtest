@@ -65,21 +65,61 @@ jobs:
           
           if [ -f gitleaks-report.json ] && [ -s gitleaks-report.json ]; then
             echo "❌ Secrets detected by Gitleaks"
-            # Post comment on PR
-            python3 -c "
-            import os
-            import json
-            import sys
-            sys.path.insert(0, os.getcwd())
-            
-            try:
-                from scripts.utils.github_api import GitHubAPI
-            except ImportError as e:
-                print(f'Import error: {e}')
-                print(f'Current directory: {os.getcwd()}')
-                print(f'PYTHONPATH: {os.getenv(\"PYTHONPATH\", \"not set\")}')
-                print(f'Files in scripts/: {os.listdir(\"scripts\") if os.path.exists(\"scripts\") else \"scripts/ not found\"}')
-                raise
+            echo "PYTHONPATH=$PYTHONPATH"
+            echo "Current directory: $(pwd)"
+            # Post comment on PR using a Python script file instead of inline
+            cat > post_gitleaks_comment.py << 'PYEOF'
+          import os
+          import json
+          import sys
+          sys.path.insert(0, os.getcwd())
+          
+          try:
+              from scripts.utils.github_api import GitHubAPI
+              
+              github_token = os.getenv('GITHUB_TOKEN')
+              github_repo = os.getenv('GITHUB_REPOSITORY')
+              pr_number = os.getenv('PR_NUMBER')
+              
+              if not all([github_token, github_repo, pr_number]):
+                  print('⚠️ Missing environment variables')
+                  sys.exit(0)
+              
+              with open('gitleaks-report.json', 'r') as f:
+                  data = json.load(f)
+              
+              # Handle different Gitleaks output formats
+              if isinstance(data, list):
+                  report = data
+              elif isinstance(data, dict) and 'findings' in data:
+                  report = data['findings']
+              else:
+                  report = []
+              
+              github_api = GitHubAPI(github_token, github_repo)
+              
+              comment = '❌ **🚫 PR BLOCKED: Secrets Detected by Gitleaks**\n\n'
+              comment += f'**Found {len(report)} potential secrets. This PR cannot be merged until all secrets are removed.**\n\n'
+              
+              for finding in report[:10]:
+                  file_path = finding.get('File', finding.get('file', 'unknown'))
+                  line = finding.get('Line', finding.get('line', '?'))
+                  rule = finding.get('RuleID', finding.get('rule', 'unknown'))
+                  comment += f'- **{file_path}:{line}** - {rule}\n'
+              
+              if len(report) > 10:
+                  comment += f'\n... and {len(report) - 10} more findings\n'
+              
+              comment += '\n**🚫 BLOCKING ISSUE:** This PR is blocked from merging. Remove all secrets before proceeding.'
+              
+              github_api.post_comment(int(pr_number), comment)
+              print('✅ Gitleaks comment posted')
+          except Exception as e:
+              print(f'⚠️ Error posting Gitleaks comment: {e}')
+              import traceback
+              traceback.print_exc()
+          PYEOF
+            python3 post_gitleaks_comment.py || echo "⚠️ Failed to post Gitleaks comment, continuing..."
             
             try:
                 github_token = os.getenv('GITHUB_TOKEN')
