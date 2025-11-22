@@ -53,6 +53,8 @@ jobs:
       
       - name: Secret Scanning (Gitleaks)
         id: gitleaks
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           echo "🔒 Running Gitleaks secret scanning..."
           gitleaks detect --source . --verbose --report-format json --report-path gitleaks-report.json --exit-code 0 || true
@@ -64,13 +66,25 @@ jobs:
             import os
             import json
             import sys
-            sys.path.insert(0, '.')
-            from scripts.utils.github_api import GitHubAPI
+            sys.path.insert(0, os.getcwd())
+            
+            try:
+                from scripts.utils.github_api import GitHubAPI
+            except ImportError as e:
+                print(f'Import error: {e}')
+                print(f'Current directory: {os.getcwd()}')
+                print(f'PYTHONPATH: {os.getenv(\"PYTHONPATH\", \"not set\")}')
+                print(f'Files in scripts/: {os.listdir(\"scripts\") if os.path.exists(\"scripts\") else \"scripts/ not found\"}')
+                raise
             
             try:
                 github_token = os.getenv('GITHUB_TOKEN')
                 github_repo = os.getenv('GITHUB_REPOSITORY')
-                pr_number = int(os.getenv('PR_NUMBER'))
+                pr_number = os.getenv('PR_NUMBER')
+                
+                if not all([github_token, github_repo, pr_number]):
+                    print('⚠️ Missing environment variables')
+                    sys.exit(0)
                 
                 with open('gitleaks-report.json', 'r') as f:
                     data = json.load(f)
@@ -99,9 +113,13 @@ jobs:
                 
                 comment += '\n**🚫 BLOCKING ISSUE:** This PR is blocked from merging. Remove all secrets before proceeding.'
                 
-                github_api.post_comment(pr_number, comment)
+                github_api.post_comment(int(pr_number), comment)
+                print('✅ Gitleaks comment posted')
             except Exception as e:
-                print(f'Error posting Gitleaks comment: {e}')
+                print(f'⚠️ Error posting Gitleaks comment: {e}')
+                import traceback
+                traceback.print_exc()
+                # Don't fail the step if comment posting fails
             "
             echo "❌ PR BLOCKED: Secrets detected. This PR cannot be merged."
             exit 1
