@@ -77,8 +77,8 @@ jobs:
                 
                 github_api = GitHubAPI(github_token, github_repo)
                 
-                comment = '❌ **Gitleaks Secret Scanning Failed**\n\n'
-                comment += f'Found {len(report)} potential secrets:\n\n'
+                comment = '❌ **🚫 PR BLOCKED: Secrets Detected by Gitleaks**\n\n'
+                comment += f'**Found {len(report)} potential secrets. This PR cannot be merged until all secrets are removed.**\n\n'
                 
                 for finding in report[:10]:
                     file_path = finding.get('File', finding.get('file', 'unknown'))
@@ -89,17 +89,17 @@ jobs:
                 if len(report) > 10:
                     comment += f'\n... and {len(report) - 10} more findings\n'
                 
-                comment += '\n**Action Required:** Remove all secrets before merging.'
+                comment += '\n**🚫 BLOCKING ISSUE:** This PR is blocked from merging. Remove all secrets before proceeding.'
                 
                 github_api.post_comment(pr_number, comment)
             except Exception as e:
                 print(f'Error posting Gitleaks comment: {e}')
             "
+            echo "❌ PR BLOCKED: Secrets detected. This PR cannot be merged."
             exit 1
           else
             echo "✅ No secrets detected by Gitleaks"
           fi
-        continue-on-error: true
       
       - name: Custom Secret Scanning
         id: secrets_check
@@ -109,14 +109,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "🔒 Running custom secret scanning..."
-          python scripts/secrets_check.py || SECRETS_EXIT_CODE=$?
-          if [ "${SECRETS_EXIT_CODE:-0}" -ne 0 ]; then
-            echo "❌ Custom secret scanning failed"
+          if ! python scripts/secrets_check.py; then
+            echo "❌ 🚫 PR BLOCKED: Custom secret scanning failed. This PR cannot be merged."
             exit 1
           else
             echo "✅ Custom secret scanning passed"
           fi
-        continue-on-error: true
       
       - name: Static Code Analysis
         id: static_analysis
@@ -126,14 +124,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "📊 Running static code analysis..."
-          python scripts/static_analysis.py || STATIC_EXIT_CODE=$?
-          if [ "${STATIC_EXIT_CODE:-0}" -ne 0 ]; then
-            echo "❌ Static analysis failed"
+          if ! python scripts/static_analysis.py; then
+            echo "❌ 🚫 PR BLOCKED: Static analysis found blocking issues. This PR cannot be merged."
             exit 1
           else
             echo "✅ Static analysis passed"
           fi
-        continue-on-error: true
       
       - name: Jira Validation
         id: jira_check
@@ -147,9 +143,8 @@ jobs:
           JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
         run: |
           echo "🎫 Validating Jira ticket..."
-          python scripts/jira_check.py || JIRA_EXIT_CODE=$?
-          if [ "${JIRA_EXIT_CODE:-0}" -ne 0 ]; then
-            echo "❌ Jira validation failed"
+          if ! python scripts/jira_check.py; then
+            echo "❌ 🚫 PR BLOCKED: Jira validation failed. This PR cannot be merged."
             exit 1
           else
             echo "✅ Jira validation passed"
