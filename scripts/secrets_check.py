@@ -61,6 +61,9 @@ class SecretScanner:
         re.compile(r'api[_\s-]?key\s*[:=]\s*["\']([A-Za-z0-9_-]{20,})["\']', re.IGNORECASE),
         re.compile(r'api[_\s-]?token\s*[:=]\s*["\']([A-Za-z0-9_-]{20,})["\']', re.IGNORECASE),
         re.compile(r'apikey\s*[:=]\s*["\']([A-Za-z0-9_-]{20,})["\']', re.IGNORECASE),
+        # Catch API keys without quotes and shorter values (common in test files)
+        re.compile(r'apikey\s*[:=]\s*([A-Za-z0-9_-]{5,})', re.IGNORECASE),
+        re.compile(r'api[_\s-]?key\s*[:=]\s*([A-Za-z0-9_-]{5,})', re.IGNORECASE),
     ]
     
     # GitHub Personal Access Tokens
