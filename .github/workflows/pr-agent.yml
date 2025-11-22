@@ -212,31 +212,44 @@ jobs:
               
               github_api = GitHubAPI(github_token, github_repo)
               
-              # Get step results
-              gitleaks_status = '✅' if '${{ steps.gitleaks.outcome }}' == 'success' else '❌'
-              secrets_status = '✅' if '${{ steps.secrets_check.outcome }}' == 'success' else '❌'
-              static_status = '✅' if '${{ steps.static_analysis.outcome }}' == 'success' else '❌'
-              jira_status = '✅' if '${{ steps.jira_check.outcome }}' == 'success' else '❌'
-              ai_status = '✅' if '${{ steps.ai_review.outcome }}' == 'success' else '❌'
+              # Get step results - GitHub Actions will substitute these before Python runs
+              gitleaks_outcome = '${{ steps.gitleaks.outcome }}'
+              secrets_outcome = '${{ steps.secrets_check.outcome }}'
+              static_outcome = '${{ steps.static_analysis.outcome }}'
+              jira_outcome = '${{ steps.jira_check.outcome }}'
+              ai_outcome = '${{ steps.ai_review.outcome }}'
+              
+              # Determine status emojis and text
+              gitleaks_status = '✅' if gitleaks_outcome == 'success' else '❌'
+              secrets_status = '✅' if secrets_outcome == 'success' else '❌'
+              static_status = '✅' if static_outcome == 'success' else '❌'
+              jira_status = '✅' if jira_outcome == 'success' else '❌'
+              ai_status = '✅' if ai_outcome == 'success' else '❌'
+              
+              gitleaks_text = 'PASS' if gitleaks_outcome == 'success' else 'FAIL'
+              secrets_text = 'PASS' if secrets_outcome == 'success' else 'FAIL'
+              static_text = 'PASS' if static_outcome == 'success' else 'FAIL'
+              jira_text = 'PASS' if jira_outcome == 'success' else 'FAIL'
+              ai_text = 'PASS' if ai_outcome == 'success' else 'FAIL'
               
               # Determine if PR should be blocked
               blocking_issues = []
-              if '${{ steps.gitleaks.outcome }}' != 'success':
+              if gitleaks_outcome != 'success':
                   blocking_issues.append('Secrets detected by Gitleaks')
-              if '${{ steps.secrets_check.outcome }}' != 'success':
+              if secrets_outcome != 'success':
                   blocking_issues.append('Secrets detected by custom scanner')
-              if '${{ steps.static_analysis.outcome }}' != 'success':
+              if static_outcome != 'success':
                   blocking_issues.append('Static analysis found blocking issues')
-              if '${{ steps.jira_check.outcome }}' != 'success':
+              if jira_outcome != 'success':
                   blocking_issues.append('Jira validation failed')
               
               summary = f'''## 📊 PR Agent Review Summary
               
-              {gitleaks_status} **Gitleaks Secret Scanning**: ${{'PASS' if '${{ steps.gitleaks.outcome }}' == 'success' else 'FAIL'}}
-              {secrets_status} **Custom Secret Scanning**: ${{'PASS' if '${{ steps.secrets_check.outcome }}' == 'success' else 'FAIL'}}
-              {static_status} **Static Code Analysis**: ${{'PASS' if '${{ steps.static_analysis.outcome }}' == 'success' else 'FAIL'}}
-              {jira_status} **Jira Validation**: ${{'PASS' if '${{ steps.jira_check.outcome }}' == 'success' else 'FAIL'}}
-              {ai_status} **AI Code Review**: ${{'PASS' if '${{ steps.ai_review.outcome }}' == 'success' else 'FAIL'}}
+              {gitleaks_status} **Gitleaks Secret Scanning**: {gitleaks_text}
+              {secrets_status} **Custom Secret Scanning**: {secrets_text}
+              {static_status} **Static Code Analysis**: {static_text}
+              {jira_status} **Jira Validation**: {jira_text}
+              {ai_status} **AI Code Review**: {ai_text}
               '''
               
               if blocking_issues:
